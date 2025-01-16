@@ -1,0 +1,10 @@
+{
+  "uuid": "cinnamon-maximize-to-workspace@pvaviloff",
+  "cinnamon-version": [
+    "5.4"
+  ],
+  "name": "Maximize To Workspace",
+  "description": "Puts windows in a new workspace when maximized.",
+  "version": "0.1.0",
+  "url": "https://github.com/pvaviloff/cinnamon-maximize-to-workspace"
+}

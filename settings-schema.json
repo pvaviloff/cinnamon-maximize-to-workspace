@@ -1,0 +1,7 @@
+{
+  "enableLogs" : {
+    "type" : "checkbox",
+    "default" : false,
+    "description": "Logging (see Melange - Log)"
+  }
+}
