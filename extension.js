@@ -125,11 +125,11 @@ MaximizeToWorkspace.prototype = {
         window._maximizeToWorkspaceState = STATE_CLOSED;
         let mainWorkspaceIndex = 0;
 
-        let currentTime = global.get_current_time();
-        let previousWorkspace = global.screen.get_workspace_by_index(mainWorkspaceIndex);
-        previousWorkspace.activate(currentTime);
         Mainloop.timeout_add(300, () => {
             if (window._maximizeToWorkspaceState !== STATE_CLOSED) return;
+            let currentTime = global.get_current_time();
+            let previousWorkspace = global.screen.get_workspace_by_index(mainWorkspaceIndex);
+            previousWorkspace.activate(currentTime);
             logMessage(`closed remove workspace: ${window.title} [${window.get_wm_class()}]`);
             global.screen.remove_workspace(currentWorkspace, currentTime);
         });
