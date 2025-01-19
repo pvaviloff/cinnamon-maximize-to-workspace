@@ -2,9 +2,10 @@
 const Settings = imports.ui.settings;
 const Meta = imports.gi.Meta;
 const Mainloop = imports.mainloop;
+const Lang = imports.lang;
 
 let settings = null;
-let sizeChangeEventID = 0;
+let maximizeToWorkspace = null;
 
 
 function logMessage(message, alwaysLog = false) {
@@ -13,57 +14,77 @@ function logMessage(message, alwaysLog = false) {
     }
 }
 
-function unmaximize(shellwm, actor) {
-    if (!actor) {
-        return;
-    }
-    let win = actor.get_meta_window();
-    let targetWs = win.get_workspace();
+function MaximizeToWorkspace() {
+    this._init();
+}
 
-    let previousWsIndex = 0;
-    if (win._previousWorkspaceIndex !== undefined) {
-        previousWsIndex = win._previousWorkspaceIndex;
-        delete win._previousWorkspaceIndex;
-    }
+MaximizeToWorkspace.prototype = {
+    _init: function() {
+        this._sizeChangeEventID = 0;
+    },
+    _handleResize: function(shellwm, actor, change) {
+        logMessage("handle resize");
+        if (change === Meta.SizeChange.MAXIMIZE) {
+            this._maximize(shellwm, actor);
+        }
+        if (change === Meta.SizeChange.UNMAXIMIZE) {
+            this._unmaximize(shellwm, actor);
+        }
+    },
+    _maximize: function(shellwm, actor) {
+        if (!actor) {
+            return;
+        }
+        let window = actor.get_meta_window();
+        let workspace = window.get_workspace();
+        if (workspace.list_windows().filter(w => !w.is_on_all_workspaces()).length === 1) {
+            return;
+        }
+        window._previousWorkspaceIndex = workspace.index();
 
-    let currentTime = global.get_current_time();
-
-    if (targetWs.list_windows().filter(w => !w.is_on_all_workspaces()).length <= 1) {
+        let currentTime = global.get_current_time();
+        let targetWorkspace = global.screen.append_new_workspace(false, currentTime);
         Mainloop.timeout_add(500, () => {
-            win.change_workspace_by_index(previousWsIndex, false);
-            win.activate(currentTime);
-            global.screen.remove_workspace(targetWs, currentTime);
+            window.change_workspace(targetWorkspace);
+            targetWorkspace.activate(currentTime);
+            window.activate(currentTime);
         });
-    }
 
-    logMessage(`unmaximize: ${win.title} [${win.get_wm_class()}]`);
+        logMessage(`maximized: ${window.title} [${window.get_wm_class()}]`);
+    },
+    _unmaximize: function(shellwm, actor) {
+        if (!actor) {
+            return;
+        }
+        let window = actor.get_meta_window();
+        let targetWorkspace = window.get_workspace();
 
-}
+        let previousWorkspaceIndex = 0;
+        if (window._previousWorkspaceIndex !== undefined) {
+            previousWorkspaceIndex = window._previousWorkspaceIndex;
+            delete window._previousWorkspaceIndex;
+        }
 
-function maximize(shellwm, actor) {
-    if (!actor) {
-        return;
-    }
-    let win = actor.get_meta_window();
-    win._previousWorkspaceIndex = win.get_workspace().index();
+        let currentTime = global.get_current_time();
 
-    let currentTime = global.get_current_time();
-    let targetWs = global.screen.append_new_workspace(false, currentTime);
-    Mainloop.timeout_add(500, () => {
-        win.change_workspace(targetWs);
-        targetWs.activate(currentTime);
-        win.activate(currentTime);
-    });
+        if (targetWorkspace.list_windows().filter(w => !w.is_on_all_workspaces()).length <= 1) {
+            Mainloop.timeout_add(500, () => {
+                window.change_workspace_by_index(previousWorkspaceIndex, false);
+                window.activate(currentTime);
+                global.screen.remove_workspace(targetWorkspace, currentTime);
+            });
+        }
 
-    logMessage(`maximize: ${win.title} [${win.get_wm_class()}]`);
-}
-
-function handleResize(shellwm, actor, change) {
-    if (change === Meta.SizeChange.MAXIMIZE) {
-        maximize(shellwm, actor);
-    }
-    if (change === Meta.SizeChange.UNMAXIMIZE) {
-        unmaximize(shellwm, actor);
+        logMessage(`unmaximized: ${window.title} [${window.get_wm_class()}]`);
+    },
+    enable: function() {
+        logMessage("Enable");
+        this._sizeChangeEventID = global.window_manager.connect("size-change", Lang.bind(this, this._handleResize));
+    },
+    disable: function() {
+        if (this._sizeChangeEventID) global.window_manager.disconnect(this._sizeChangeEventID);
+        this._sizeChangeEventID = 0;
+        logMessage("Disable");
     }
 }
 
@@ -82,15 +103,13 @@ SettingsMaximizeToWorkspace.prototype = {
 
 function init(metadata) {
     settings = new SettingsMaximizeToWorkspace(metadata.uuid);
+    maximizeToWorkspace = new MaximizeToWorkspace();
 }
 
 function enable() {
-    logMessage("Enable");
-    sizeChangeEventID = global.window_manager.connect("size-change", handleResize);
+    maximizeToWorkspace.enable();
 }
 
 function disable() {
-    if (sizeChangeEventID) global.window_manager.disconnect(sizeChangeEventID);
-    sizeChangeEventID = 0;
-    logMessage("Disable");
+    maximizeToWorkspace.disable();
 }
