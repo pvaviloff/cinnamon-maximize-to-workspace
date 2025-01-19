@@ -37,7 +37,13 @@ MaximizeToWorkspace.prototype = {
         }
         let window = actor.get_meta_window();
         let workspace = window.get_workspace();
-        if (workspace.list_windows().filter(w => !w.is_on_all_workspaces()).length === 1) {
+        if (
+            workspace.index() !== 0
+            && workspace.list_windows().filter(w => !w.is_on_all_workspaces()).length === 1
+        ) {
+            if (window._previousWorkspaceIndex !== undefined) {
+                delete window._previousWorkspaceIndex;
+            }
             return;
         }
         window._previousWorkspaceIndex = workspace.index();
@@ -75,7 +81,7 @@ MaximizeToWorkspace.prototype = {
             });
         }
 
-        logMessage(`unmaximized: ${window.title} [${window.get_wm_class()}]`);
+        logMessage(`unmaximized: ${window.title} [${window.get_wm_class()}] workspace #${previousWorkspaceIndex}`);
     },
     enable: function() {
         logMessage("Enable");
