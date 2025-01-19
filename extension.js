@@ -63,6 +63,10 @@ MaximizeToWorkspace.prototype = {
             return;
         }
         let window = actor.get_meta_window();
+        if (window._previousWorkspaceIndex === undefined) {
+            return;
+        }
+
         let targetWorkspace = window.get_workspace();
 
         let previousWorkspaceIndex = 0;
