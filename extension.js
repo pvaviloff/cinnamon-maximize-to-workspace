@@ -68,12 +68,8 @@ MaximizeToWorkspace.prototype = {
         }
 
         let targetWorkspace = window.get_workspace();
-
-        let previousWorkspaceIndex = 0;
-        if (window._previousWorkspaceIndex !== undefined) {
-            previousWorkspaceIndex = window._previousWorkspaceIndex;
-            delete window._previousWorkspaceIndex;
-        }
+        let previousWorkspaceIndex = window._previousWorkspaceIndex;
+        delete window._previousWorkspaceIndex;
 
         let currentTime = global.get_current_time();
 
