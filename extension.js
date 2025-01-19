@@ -7,6 +7,11 @@ const Lang = imports.lang;
 let settings = null;
 let maximizeToWorkspace = null;
 
+const WORKSPACE_IS_UNDEFINED = -1;
+
+const STATE_MAXIMIZED = 1;
+const STATE_UNMAXIMIZED = 2;
+const STATE_CLOSED = 3;
 
 function logMessage(message, alwaysLog = false) {
     if (alwaysLog || settings.enableLogs) {
@@ -21,13 +26,13 @@ function MaximizeToWorkspace() {
 MaximizeToWorkspace.prototype = {
     _init: function() {
         this._sizeChangeEventID = 0;
+        this._closedEventID = 0;
     },
     _handleResize: function(shellwm, actor, change) {
         logMessage("handle resize");
         if (change === Meta.SizeChange.MAXIMIZE) {
             this._maximize(shellwm, actor);
-        }
-        if (change === Meta.SizeChange.UNMAXIMIZE) {
+        } else if (change === Meta.SizeChange.UNMAXIMIZE) {
             this._unmaximize(shellwm, actor);
         }
     },
@@ -36,60 +41,99 @@ MaximizeToWorkspace.prototype = {
             return;
         }
         let window = actor.get_meta_window();
+        logMessage(`maximized: ${window.title} [${window.get_wm_class()}]`);
         let workspace = window.get_workspace();
         if (
             workspace.index() !== 0
             && workspace.list_windows().filter(w => !w.is_on_all_workspaces()).length === 1
         ) {
-            if (window._previousWorkspaceIndex !== undefined) {
-                delete window._previousWorkspaceIndex;
-            }
+            window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
             return;
         }
         window._previousWorkspaceIndex = workspace.index();
+        window._maximizeToWorkspaceState = STATE_MAXIMIZED;
 
         let currentTime = global.get_current_time();
         let targetWorkspace = global.screen.append_new_workspace(false, currentTime);
         Mainloop.timeout_add(500, () => {
+            logMessage(`maximized change workspace: ${window.title} [${window.get_wm_class()}]`);
+            if (!window || window._maximizeToWorkspaceState !== STATE_MAXIMIZED) return;
             window.change_workspace(targetWorkspace);
             targetWorkspace.activate(currentTime);
-            window.activate(currentTime);
         });
-
-        logMessage(`maximized: ${window.title} [${window.get_wm_class()}]`);
     },
     _unmaximize: function(shellwm, actor) {
         if (!actor) {
             return;
         }
         let window = actor.get_meta_window();
-        if (window._previousWorkspaceIndex === undefined) {
+        if (window._previousWorkspaceIndex === WORKSPACE_IS_UNDEFINED) {
             return;
         }
 
         let targetWorkspace = window.get_workspace();
         let previousWorkspaceIndex = window._previousWorkspaceIndex;
-        delete window._previousWorkspaceIndex;
-
+        window._maximizeToWorkspaceState = STATE_UNMAXIMIZED;
         let currentTime = global.get_current_time();
+        logMessage(`unmaximized: ${window.title} [${window.get_wm_class()}] workspace #${previousWorkspaceIndex}`);
 
         if (targetWorkspace.list_windows().filter(w => !w.is_on_all_workspaces()).length <= 1) {
             Mainloop.timeout_add(500, () => {
+                logMessage(`unmaximized change&remove workspace: ${window.title} [${window.get_wm_class()}]`);
+                if (
+                    window._maximizeToWorkspaceState !== STATE_UNMAXIMIZED
+                    || window._previousWorkspaceIndex === WORKSPACE_IS_UNDEFINED
+                ) {
+                    return;
+                }
                 window.change_workspace_by_index(previousWorkspaceIndex, false);
                 window.activate(currentTime);
                 global.screen.remove_workspace(targetWorkspace, currentTime);
+                window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
             });
         }
 
-        logMessage(`unmaximized: ${window.title} [${window.get_wm_class()}] workspace #${previousWorkspaceIndex}`);
+    },
+    _closed: function (shellwm, actor) {
+        if (!actor) {
+            return;
+        }
+        let window = actor.get_meta_window();
+        let currentWorkspace = window.get_workspace();
+        if (currentWorkspace.index() === 0) {
+            return;
+        }
+        if (currentWorkspace.list_windows().filter(w => !w.is_on_all_workspaces()).length !== 0) {
+            return;
+        }
+        logMessage(`closed: ${window.title} [${window.get_wm_class()}]`);
+        window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
+        window._maximizeToWorkspaceState = STATE_CLOSED;
+        let mainWorkspaceIndex = 0;
+
+        let currentTime = global.get_current_time();
+        let previousWorkspace = global.screen.get_workspace_by_index(mainWorkspaceIndex);
+        previousWorkspace.activate(currentTime);
+        Mainloop.timeout_add(300, () => {
+            if (window._maximizeToWorkspaceState !== STATE_CLOSED) return;
+            logMessage(`closed remove workspace: ${window.title} [${window.get_wm_class()}]`);
+            global.screen.remove_workspace(currentWorkspace, currentTime);
+        });
     },
     enable: function() {
         logMessage("Enable");
         this._sizeChangeEventID = global.window_manager.connect("size-change", Lang.bind(this, this._handleResize));
+        this._closedEventID = global.window_manager.connect("destroy", Lang.bind(this, this._closed));
     },
     disable: function() {
-        if (this._sizeChangeEventID) global.window_manager.disconnect(this._sizeChangeEventID);
-        this._sizeChangeEventID = 0;
+        if (this._sizeChangeEventID) {
+            global.window_manager.disconnect(this._sizeChangeEventID);
+            this._sizeChangeEventID = 0;
+        }
+        if (this._closedEventID) {
+            global.window_manager.disconnect(this._closedEventID);
+            this._closedEventID = 0;
+        }
         logMessage("Disable");
     }
 }
@@ -102,7 +146,7 @@ SettingsMaximizeToWorkspace.prototype = {
     _init: function(uuid) {
         this.settings = new Settings.ExtensionSettings(this, uuid);
 
-        this.settings.bindProperty(Settings.BindingDirection.IN, "enableLogs", "enableLogs", function(){
+        this.settings.bindProperty(Settings.BindingDirection.IN, "enableLogs", "enableLogs", function() {
         });
     }
 }
