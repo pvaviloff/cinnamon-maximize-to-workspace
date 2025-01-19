@@ -36,7 +36,7 @@ MaximizeToWorkspace.prototype = {
         }
         let window = actor.get_meta_window();
         window._maximizeToWorkspaceState = STATE_OPENED;
-        logMessage(`opened: ${window.title} [${window.get_wm_class()}]`);
+        logMessage(`opened: ${window.get_id()} [${window.get_wm_class()}]`);
         if (window.get_maximized() !== Meta.MaximizeFlags.BOTH) return;
         this._maximize(shellwm, actor);
     },
@@ -53,7 +53,7 @@ MaximizeToWorkspace.prototype = {
             return;
         }
         let window = actor.get_meta_window();
-        logMessage(`maximized: ${window.title} [${window.get_wm_class()}]`);
+        logMessage(`maximized: ${window.get_id()} [${window.get_wm_class()}]`);
         let workspace = window.get_workspace();
         if (
             workspace.index() !== 0
@@ -68,7 +68,7 @@ MaximizeToWorkspace.prototype = {
         let currentTime = global.get_current_time();
         let targetWorkspace = global.screen.append_new_workspace(false, currentTime);
         Mainloop.timeout_add(500, () => {
-            logMessage(`maximized change workspace: ${window.title} [${window.get_wm_class()}]`);
+            logMessage(`maximized (change workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (!window || window._maximizeToWorkspaceState !== STATE_MAXIMIZED) return;
             window.change_workspace(targetWorkspace);
             targetWorkspace.activate(currentTime);
@@ -90,12 +90,12 @@ MaximizeToWorkspace.prototype = {
         let previousWorkspaceIndex = window._previousWorkspaceIndex;
         window._maximizeToWorkspaceState = STATE_UNMAXIMIZED;
         let currentTime = global.get_current_time();
-        logMessage(`unmaximized: ${window.title} [${window.get_wm_class()}] workspace #${previousWorkspaceIndex}`);
+        logMessage(`unmaximized: ${window.get_id()} [${window.get_wm_class()}] workspace #${previousWorkspaceIndex}`);
         if (targetWorkspace.list_windows().filter(w => !w.is_on_all_workspaces()).length > 1) {
             return;
         }
         Mainloop.timeout_add(500, () => {
-            logMessage(`unmaximized change&remove workspace: ${window.title} [${window.get_wm_class()}]`);
+            logMessage(`unmaximized (change&remove workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (
                 window._maximizeToWorkspaceState !== STATE_UNMAXIMIZED
                 || window._previousWorkspaceIndex === WORKSPACE_IS_UNDEFINED
@@ -120,7 +120,7 @@ MaximizeToWorkspace.prototype = {
         if (currentWorkspace.list_windows().filter(w => !w.is_on_all_workspaces()).length !== 0) {
             return;
         }
-        logMessage(`closed: ${window.title} [${window.get_wm_class()}]`);
+        logMessage(`closed: ${window.get_id()} [${window.get_wm_class()}]`);
         window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
         window._maximizeToWorkspaceState = STATE_CLOSED;
         let mainWorkspaceIndex = 0;
@@ -130,7 +130,7 @@ MaximizeToWorkspace.prototype = {
             let currentTime = global.get_current_time();
             let previousWorkspace = global.screen.get_workspace_by_index(mainWorkspaceIndex);
             previousWorkspace.activate(currentTime);
-            logMessage(`closed remove workspace: ${window.title} [${window.get_wm_class()}]`);
+            logMessage(`closed (remove workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             global.screen.remove_workspace(currentWorkspace, currentTime);
         });
     },
