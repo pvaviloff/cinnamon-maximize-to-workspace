@@ -7,6 +7,7 @@ const Lang = imports.lang;
 let settings = null;
 let maximizeToWorkspace = null;
 
+const TIMEOUT = 300;
 const WORKSPACE_IS_UNDEFINED = -1;
 
 const STATE_OPENED = 1;
@@ -36,6 +37,7 @@ MaximizeToWorkspace.prototype = {
         }
         let window = actor.get_meta_window();
         window._maximizeToWorkspaceState = STATE_OPENED;
+        window._previousWorkspaceIndex = window.get_workspace().index();
         logMessage(`opened: ${window.get_id()} [${window.get_wm_class()}]`);
         if (window.get_maximized() !== Meta.MaximizeFlags.BOTH) return;
         this._maximize(shellwm, actor);
@@ -67,11 +69,11 @@ MaximizeToWorkspace.prototype = {
 
         let currentTime = global.get_current_time();
         let targetWorkspace = global.screen.append_new_workspace(false, currentTime);
-        Mainloop.timeout_add(500, () => {
+        Mainloop.timeout_add(TIMEOUT, () => {
             logMessage(`maximized (change workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (!window || window._maximizeToWorkspaceState !== STATE_MAXIMIZED) return;
             window.change_workspace(targetWorkspace);
-            targetWorkspace.activate(currentTime);
+            targetWorkspace.activate_with_focus(window, currentTime);
         });
     },
     _unmaximize: function(shellwm, actor) {
@@ -79,10 +81,7 @@ MaximizeToWorkspace.prototype = {
             return;
         }
         let window = actor.get_meta_window();
-        if (
-            window._previousWorkspaceIndex === undefined
-            || window._previousWorkspaceIndex === WORKSPACE_IS_UNDEFINED
-        ) {
+        if (window._previousWorkspaceIndex === WORKSPACE_IS_UNDEFINED) {
             return;
         }
 
@@ -94,7 +93,7 @@ MaximizeToWorkspace.prototype = {
         if (targetWorkspace.list_windows().filter(w => !w.is_on_all_workspaces()).length > 1) {
             return;
         }
-        Mainloop.timeout_add(500, () => {
+        Mainloop.timeout_add(TIMEOUT, () => {
             logMessage(`unmaximized (change&remove workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (
                 window._maximizeToWorkspaceState !== STATE_UNMAXIMIZED
@@ -102,8 +101,9 @@ MaximizeToWorkspace.prototype = {
             ) {
                 return;
             }
-            window.change_workspace_by_index(previousWorkspaceIndex, false);
-            window.activate(currentTime);
+            let previousWorkspace = global.screen.get_workspace_by_index(previousWorkspaceIndex);
+            window.change_workspace(previousWorkspace);
+            previousWorkspace.activate_with_focus(window, currentTime);
             global.screen.remove_workspace(targetWorkspace, currentTime);
             window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
         });
@@ -125,7 +125,7 @@ MaximizeToWorkspace.prototype = {
         window._maximizeToWorkspaceState = STATE_CLOSED;
         let mainWorkspaceIndex = 0;
 
-        Mainloop.timeout_add(300, () => {
+        Mainloop.timeout_add(TIMEOUT, () => {
             if (window._maximizeToWorkspaceState !== STATE_CLOSED) return;
             let currentTime = global.get_current_time();
             let previousWorkspace = global.screen.get_workspace_by_index(mainWorkspaceIndex);
