@@ -1,4 +1,9 @@
 {
+  "isOpenToExistWorkspace" : {
+    "type" : "checkbox",
+    "default" : true,
+    "description": "Windows will be maximized in the first available workspace or in the current one if none are available."
+  },
   "enableLogs" : {
     "type" : "checkbox",
     "default" : false,
