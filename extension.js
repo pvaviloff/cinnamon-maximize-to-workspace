@@ -3,11 +3,12 @@ const Settings = imports.ui.settings;
 const Meta = imports.gi.Meta;
 const Mainloop = imports.mainloop;
 const Lang = imports.lang;
+const Gio = imports.gi.Gio;
 
 let settings = null;
 let maximizeToWorkspace = null;
 
-const TIMEOUT = 300;
+const TIMEOUT = 400;
 const WORKSPACE_IS_UNDEFINED = -1;
 
 const STATE_OPENED = 1;
@@ -30,6 +31,7 @@ MaximizeToWorkspace.prototype = {
         this._openedEventID = 0;
         this._sizeChangeEventID = 0;
         this._closedEventID = 0;
+        this._gsettings = new Gio.Settings({ schema: 'org.cinnamon.desktop.wm.preferences' });
     },
     _opened: function (shellwm, actor) {
         if (!actor) {
@@ -50,14 +52,16 @@ MaximizeToWorkspace.prototype = {
             this._unmaximize(shellwm, actor);
         }
     },
-    _getFirstEmptyWorkspace: function (window) {
-        let workspaceManager = window.get_display().get_workspace_manager();
-        for (let i = 0; i < workspaceManager.get_n_workspaces(); ++i) {
-            let workspace = workspaceManager.get_workspace_by_index(i);
-            let windowsCount = workspace.list_windows()
-                .filter(w => !w.is_always_on_all_workspaces() && window.get_monitor() == w.get_monitor()).length;
-            if (windowsCount < 1) {
-                return workspace;
+    _getFirstEmptyWorkspace: function(window) {
+        const workspaceManager = window.get_display().get_workspace_manager();
+        const numberOfWorkspaces = workspaceManager.get_n_workspaces();
+
+        for (let i = 0; i < numberOfWorkspaces; ++i) {
+            const currentWorkspace = workspaceManager.get_workspace_by_index(i);
+            const windowsOnCurrentWorkspace = currentWorkspace.list_windows()
+                .filter(w => !w.is_always_on_all_workspaces() && window.get_monitor() === w.get_monitor());
+            if (windowsOnCurrentWorkspace.length < 1) {
+                return currentWorkspace;
             }
         }
 
@@ -81,9 +85,10 @@ MaximizeToWorkspace.prototype = {
         window._maximizeToWorkspaceState = STATE_MAXIMIZED;
 
         let currentTime = global.get_current_time();
-        let targetWorkspace = (settings.isOpenToExistWorkspace)
-            ? this._getFirstEmptyWorkspace(window)
-            : global.screen.append_new_workspace(false, currentTime);
+        let targetWorkspace = this._getFirstEmptyWorkspace(window);
+        if ((targetWorkspace === null || targetWorkspace.index() === 0) && !settings.isOpenToExistWorkspace) {
+            targetWorkspace = global.screen.append_new_workspace(false, currentTime);
+        }
 
         if (targetWorkspace == null) {
             window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
@@ -92,6 +97,8 @@ MaximizeToWorkspace.prototype = {
         Mainloop.timeout_add(TIMEOUT, () => {
             logMessage(`maximized (change workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (!window || window._maximizeToWorkspaceState !== STATE_MAXIMIZED) return;
+            targetWorkspace._workspaceName = window.get_wm_class();
+            this.refreshWorkspaceNames();
             window.change_workspace(targetWorkspace);
             targetWorkspace.activate_with_focus(window, currentTime);
         });
@@ -128,6 +135,7 @@ MaximizeToWorkspace.prototype = {
                 global.screen.remove_workspace(targetWorkspace, currentTime);
             }
             window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
+            this.refreshWorkspaceNames();
         });
     },
     _closed: function (shellwm, actor) {
@@ -157,10 +165,49 @@ MaximizeToWorkspace.prototype = {
             if (!settings.isOpenToExistWorkspace) {
                 global.screen.remove_workspace(currentWorkspace, currentTime);
             }
+            this.refreshWorkspaceNames();
         });
+    },
+    _cleanupEmptyWorkspaces: function() {
+        const workspaceManager = global.workspace_manager;
+        for (let i = workspaceManager.n_workspaces - 1; i > 0; i--) {
+            let ws = workspaceManager.get_workspace_by_index(i);
+            if (ws.list_windows().filter(w => !w.is_on_all_workspaces()).length !== 0) {
+                continue;
+            }
+            workspaceManager.remove_workspace(ws, global.get_current_time());
+        }
+        logMessage(`empty workspaces closed`);
+    },
+    refreshWorkspaceNames: function () {
+        if (!settings.autoRenameWorkspaces) {
+            return;
+        }
+        const workspaceManager = global.workspace_manager;
+        const numberOfWorkspaces = workspaceManager.get_n_workspaces();
+
+        let names = [];
+        for (let i = 0; i < numberOfWorkspaces; ++i) {
+            const currentWorkspace = workspaceManager.get_workspace_by_index(i);
+            if (currentWorkspace._workspaceName) {
+                names[i] = currentWorkspace._workspaceName;
+            } else if (i === 0) {
+                names[i] = 'Main';
+            } else {
+                names[i] = `Workspace ${i + 1}`;
+            }
+        }
+
+        this._gsettings.set_strv('workspace-names', names);
     },
     enable: function() {
         logMessage("Enable");
+        if (settings.autoCleanupWorkspaces) {
+            Mainloop.timeout_add(2000, () => {
+                this._cleanupEmptyWorkspaces();
+                return false;
+            });
+        }
         this._openedEventID = global.window_manager.connect("map", Lang.bind(this, this._opened));
         this._sizeChangeEventID = global.window_manager.connect("size-change", Lang.bind(this, this._handleResize));
         this._closedEventID = global.window_manager.connect("destroy", Lang.bind(this, this._closed));
@@ -198,10 +245,28 @@ SettingsMaximizeToWorkspace.prototype = {
         });
 
         this.settings.bindProperty(Settings.BindingDirection.IN, "isOpenToExistWorkspace", "isOpenToExistWorkspace", function() {
-            if (maximizeToWorkspace) {
-                logMessage(`setting isOpenToExistWorkspace toggled`);
-                maximizeToWorkspace.refresh();
+            if (!maximizeToWorkspace) {
+                return;
             }
+            logMessage(`setting isOpenToExistWorkspace toggled`);
+            maximizeToWorkspace.refresh();
+        });
+
+        this.settings.bindProperty(Settings.BindingDirection.IN, "autoCleanupWorkspaces", "autoCleanupWorkspaces", function() {
+        });
+
+        this.settings.bindProperty(Settings.BindingDirection.IN, "autoRenameWorkspaces", "autoRenameWorkspaces", function() {
+            if (!maximizeToWorkspace) {
+                return;
+            }
+            logMessage(`setting autoRenameWorkspaces toggled`);
+            maximizeToWorkspace.refresh();
+            if (!this.autoRenameWorkspaces) {
+                let gsettings = new Gio.Settings({ schema: 'org.cinnamon.desktop.wm.preferences' });
+                gsettings.set_strv('workspace-names', []);
+                return;
+            }
+            maximizeToWorkspace.refreshWorkspaceNames();
         });
     }
 }

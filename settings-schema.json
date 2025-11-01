@@ -4,6 +4,16 @@
     "default" : true,
     "description": "Windows will be maximized in the first available workspace or in the current one if none are available."
   },
+  "autoCleanupWorkspaces" : {
+    "type" : "checkbox",
+    "default" : false,
+    "description": "Automatically remove all empty workspaces (except the first) after Cinnamon starts or restarts."
+  },
+  "autoRenameWorkspaces" : {
+    "type" : "checkbox",
+    "default" : false,
+    "description": "Automatically rename workspaces"
+  },
   "enableLogs" : {
     "type" : "checkbox",
     "default" : false,
