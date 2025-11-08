@@ -1,9 +1,9 @@
 
 const Settings = imports.ui.settings;
+const Main = imports.ui.main;
 const Meta = imports.gi.Meta;
 const Mainloop = imports.mainloop;
 const Lang = imports.lang;
-const Gio = imports.gi.Gio;
 
 let settings = null;
 let maximizeToWorkspace = null;
@@ -22,16 +22,16 @@ function logMessage(message, alwaysLog = false) {
     }
 }
 
-function MaximizeToWorkspace() {
-    this._init();
+function MaximizeToWorkspace(settings) {
+    this._init(settings);
 }
 
 MaximizeToWorkspace.prototype = {
-    _init: function() {
+    _init: function(settings) {
+        this._settings = settings;
         this._openedEventID = 0;
         this._sizeChangeEventID = 0;
         this._closedEventID = 0;
-        this._gsettings = new Gio.Settings({ schema: 'org.cinnamon.desktop.wm.preferences' });
     },
     _opened: function (shellwm, actor) {
         if (!actor) {
@@ -79,6 +79,7 @@ MaximizeToWorkspace.prototype = {
             && workspace.list_windows().filter(w => !w.is_on_all_workspaces()).length === 1
         ) {
             window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
+            this._refreshWorkspaceNames();
             return;
         }
         window._previousWorkspaceIndex = workspace.index();
@@ -86,7 +87,7 @@ MaximizeToWorkspace.prototype = {
 
         let currentTime = global.get_current_time();
         let targetWorkspace = this._getFirstEmptyWorkspace(window);
-        if ((targetWorkspace === null || targetWorkspace.index() === 0) && !settings.isOpenToExistWorkspace) {
+        if ((targetWorkspace === null || targetWorkspace.index() === 0) && !this._settings.isOpenToExistWorkspace) {
             targetWorkspace = global.screen.append_new_workspace(false, currentTime);
         }
 
@@ -97,9 +98,8 @@ MaximizeToWorkspace.prototype = {
         Mainloop.timeout_add(TIMEOUT, () => {
             logMessage(`maximized (change workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (!window || window._maximizeToWorkspaceState !== STATE_MAXIMIZED) return;
-            targetWorkspace._workspaceName = window.get_wm_class();
-            this.refreshWorkspaceNames();
             window.change_workspace(targetWorkspace);
+            this._refreshWorkspaceNames();
             targetWorkspace.activate_with_focus(window, currentTime);
         });
     },
@@ -131,11 +131,12 @@ MaximizeToWorkspace.prototype = {
             let previousWorkspace = global.screen.get_workspace_by_index(previousWorkspaceIndex);
             window.change_workspace(previousWorkspace);
             previousWorkspace.activate_with_focus(window, currentTime);
-            if (!settings.isOpenToExistWorkspace) {
+            this._refreshWorkspaceNames();
+            if (!this._settings.isOpenToExistWorkspace) {
                 global.screen.remove_workspace(targetWorkspace, currentTime);
+                this._refreshWorkspaceNames();
             }
             window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
-            this.refreshWorkspaceNames();
         });
     },
     _closed: function (shellwm, actor) {
@@ -162,10 +163,11 @@ MaximizeToWorkspace.prototype = {
             previousWorkspace.activate(currentTime);
             logMessage(`closed (remove workspace): ${window.get_id()} [${window.get_wm_class()}]`);
 
-            if (!settings.isOpenToExistWorkspace) {
+            this._refreshWorkspaceNames();
+            if (!this._settings.isOpenToExistWorkspace) {
                 global.screen.remove_workspace(currentWorkspace, currentTime);
+                this._refreshWorkspaceNames();
             }
-            this.refreshWorkspaceNames();
         });
     },
     _cleanupEmptyWorkspaces: function() {
@@ -179,30 +181,28 @@ MaximizeToWorkspace.prototype = {
         }
         logMessage(`empty workspaces closed`);
     },
-    refreshWorkspaceNames: function () {
-        if (!settings.autoRenameWorkspaces) {
+    _refreshWorkspaceNames: function () {
+        if (!this._settings.autoRenameWorkspaces) {
             return;
         }
         const workspaceManager = global.workspace_manager;
         const numberOfWorkspaces = workspaceManager.get_n_workspaces();
 
-        let names = [];
         for (let i = 0; i < numberOfWorkspaces; ++i) {
             const currentWorkspace = workspaceManager.get_workspace_by_index(i);
-            if (currentWorkspace._workspaceName) {
-                names[i] = currentWorkspace._workspaceName;
-            } else if (i === 0) {
-                names[i] = 'Main';
-            } else {
-                names[i] = `Workspace ${i + 1}`;
+            const windowsList = currentWorkspace.list_windows().filter(w => !w.is_on_all_workspaces());
+            if (i === 0) {
+                Main.setWorkspaceName(i, 'main');
+            } else if (windowsList.length === 1) {
+                Main.setWorkspaceName(i, windowsList[0].get_wm_class().toLowerCase());
+            } else if (windowsList.length === 0) {
+                Main.setWorkspaceName(i, `Workspace ${i + 1}`);
             }
         }
-
-        this._gsettings.set_strv('workspace-names', names);
     },
     enable: function() {
         logMessage("Enable");
-        if (settings.autoCleanupWorkspaces) {
+        if (this._settings.autoCleanupWorkspaces) {
             Mainloop.timeout_add(2000, () => {
                 this._cleanupEmptyWorkspaces();
                 return false;
@@ -261,19 +261,13 @@ SettingsMaximizeToWorkspace.prototype = {
             }
             logMessage(`setting autoRenameWorkspaces toggled`);
             maximizeToWorkspace.refresh();
-            if (!this.autoRenameWorkspaces) {
-                let gsettings = new Gio.Settings({ schema: 'org.cinnamon.desktop.wm.preferences' });
-                gsettings.set_strv('workspace-names', []);
-                return;
-            }
-            maximizeToWorkspace.refreshWorkspaceNames();
         });
     }
 }
 
 function init(metadata) {
     settings = new SettingsMaximizeToWorkspace(metadata.uuid);
-    maximizeToWorkspace = new MaximizeToWorkspace();
+    maximizeToWorkspace = new MaximizeToWorkspace(settings);
 }
 
 function enable() {
