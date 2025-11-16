@@ -40,6 +40,7 @@ MaximizeToWorkspace.prototype = {
         let window = actor.get_meta_window();
         window._maximizeToWorkspaceState = STATE_OPENED;
         window._previousWorkspaceIndex = window.get_workspace().index();
+        window._currentWorkspaceIndex = window.get_workspace().index();
         logMessage(`opened: ${window.get_id()} [${window.get_wm_class()}]`);
         if (window.get_maximized() !== Meta.MaximizeFlags.BOTH) return;
         this._maximize(shellwm, actor);
@@ -95,6 +96,7 @@ MaximizeToWorkspace.prototype = {
             window._previousWorkspaceIndex = WORKSPACE_IS_UNDEFINED;
             return;
         }
+        window._currentWorkspaceIndex = targetWorkspace.index();
         Mainloop.timeout_add(TIMEOUT, () => {
             logMessage(`maximized (change workspace): ${window.get_id()} [${window.get_wm_class()}]`);
             if (!window || window._maximizeToWorkspaceState !== STATE_MAXIMIZED) return;
@@ -126,6 +128,13 @@ MaximizeToWorkspace.prototype = {
                 window._maximizeToWorkspaceState !== STATE_UNMAXIMIZED
                 || window._previousWorkspaceIndex === WORKSPACE_IS_UNDEFINED
             ) {
+                return;
+            }
+            if (previousWorkspaceIndex === targetWorkspace.index()) {
+                if (!this._settings.isOpenToExistWorkspace) {
+                    const workspaceManager = window.get_display().get_workspace_manager();
+                    global.screen.remove_workspace(workspaceManager.get_workspace_by_index(window._currentWorkspaceIndex), currentTime);
+                }
                 return;
             }
             let previousWorkspace = global.screen.get_workspace_by_index(previousWorkspaceIndex);
